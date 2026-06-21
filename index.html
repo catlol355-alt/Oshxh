@@ -64,7 +64,6 @@
             border: 1px solid rgba(255, 255, 255, 0.05);
         }
 
-        /* Visualizer */
         .visualizer-container {
             width: 100%;
             height: 100px;
@@ -79,7 +78,6 @@
             height: 100%;
         }
 
-        /* Controls */
         .main-controls {
             display: grid;
             grid-template-columns: 1fr 1fr;
@@ -127,7 +125,6 @@
         #btnPlay:hover { background-color: var(--primary-hover); }
         #btnPlay:disabled { background-color: #334155; color: var(--text-muted); cursor: not-allowed; opacity: 0.5; }
 
-        /* Extra Features Panel */
         .features-panel {
             background: rgba(0, 0, 0, 0.15);
             padding: 20px;
@@ -219,9 +216,12 @@
 </div>
 
 <script>
-    let mediaRecorder;
-    let audioChunks = [];
-    let audioContext;
+    let isRecording = false;
+    let audioStream = null;
+    let scriptProcessor = null;
+    let localRecordingBuffers = [];
+    
+    let audioContext = null;
     let reversedBuffer = null;
     let audioSourceNode = null;
     let analyserNode = null;
@@ -245,9 +245,13 @@
     resizeCanvas();
     drawBlankWave();
 
-    function initAudioContext() {
+    // MEMAKSA BANGUN AUDIOCONTEXT (Mencegah Blok Keamanan WebView)
+    async function initAudioContext() {
         if (!audioContext) {
             audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        }
+        if (audioContext.state === 'suspended') {
+            await audioContext.resume();
         }
     }
 
@@ -259,12 +263,12 @@
         }
     });
 
-    // LOAD FILE
+    // LOAD FILE AUDIO
     audioFileInput.addEventListener('change', async (e) => {
         const file = e.target.files[0];
         if (!file) return;
 
-        initAudioContext();
+        await initAudioContext();
         statusText.textContent = `Membaca file: ${file.name}...`;
         btnPlay.disabled = true;
         btnDownload.disabled = true;
@@ -284,49 +288,86 @@
         reader.readAsArrayBuffer(file);
     });
 
-    // REKAM SUARA
+    // SISTEM UTAMA TOMBOL REKAMAN BARU (WebView Compatible)
     btnRecord.addEventListener('click', async () => {
-        initAudioContext();
-        if (mediaRecorder && mediaRecorder.state === "recording") {
-            mediaRecorder.stop();
-            btnRecord.innerHTML = `<span>🔴 Rec Suara</span>`;
-            btnRecord.classList.remove('recording');
-            statusText.textContent = "Memproses pembalikan rekaman...";
-        } else {
-            audioChunks = [];
-            if (audioSourceNode) try { audioSourceNode.stop(); } catch(err){}
+        try {
+            await initAudioContext();
             
-            try {
-                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                analyserNode = audioContext.createAnalyser();
-                analyserNode.fftSize = 256;
+            if (isRecording) {
+                // BERHENTI REKAMAN
+                isRecording = false;
+                btnRecord.innerHTML = `<span>🔴 Rec Suara</span>`;
+                btnRecord.classList.remove('recording');
+                statusText.textContent = "Memproses pembalikan rekaman...";
                 
-                const source = audioContext.createMediaStreamSource(stream);
-                source.connect(analyserNode);
+                if (scriptProcessor) {
+                    scriptProcessor.disconnect();
+                    scriptProcessor.onaudioprocess = null;
+                }
+                if (audioStream) {
+                    audioStream.getTracks().forEach(track => track.stop());
+                }
+                cancelAnimationFrame(animationFrameId);
 
-                mediaRecorder = new MediaRecorder(stream);
-                mediaRecorder.ondataavailable = event => audioChunks.push(event.data);
-                mediaRecorder.onstop = async () => {
-                    stream.getTracks().forEach(track => track.stop());
-                    cancelAnimationFrame(animationFrameId);
+                if (localRecordingBuffers.length > 0) {
+                    const totalLength = localRecordingBuffers.length * 4096;
+                    const mergedBuffer = audioContext.createBuffer(1, totalLength, audioContext.sampleRate);
+                    const channelData = mergedBuffer.getChannelData(0);
                     
-                    const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
-                    const arrayBuffer = await audioBlob.arrayBuffer();
-                    const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
-                    reverseTheBuffer(audioBuffer);
-                };
+                    let offset = 0;
+                    for (let i = 0; i < localRecordingBuffers.length; i++) {
+                        channelData.set(localRecordingBuffers[i], offset);
+                        offset += 4096;
+                    }
+                    reverseTheBuffer(mergedBuffer);
+                } else {
+                    statusText.textContent = "Rekaman terlalu pendek, coba lagi.";
+                }
+            } else {
+                // MULAI REKAMAN
+                localRecordingBuffers = [];
+                if (audioSourceNode) try { audioSourceNode.stop(); } catch(err){}
+                
+                statusText.textContent = "Meminta akses mikrofon...";
 
-                mediaRecorder.start();
-                btnRecord.innerHTML = `<span>⏹ Berhenti</span>`;
-                btnRecord.classList.add('recording');
-                statusText.textContent = "Mendengarkan rekaman... Bicaralah!";
-                btnPlay.disabled = true;
-                btnDownload.disabled = true;
+                const constraints = { audio: true, video: false };
+                
+                navigator.mediaDevices.getUserMedia(constraints)
+                .then(function(stream) {
+                    audioStream = stream;
+                    analyserNode = audioContext.createAnalyser();
+                    analyserNode.fftSize = 256;
+                    
+                    const source = audioContext.createMediaStreamSource(audioStream);
+                    source.connect(analyserNode);
 
-                visualize();
-            } catch (err) {
-                statusText.textContent = "Akses mikrofon ditolak.";
+                    // Menggunakan ScriptProcessor Buffer Stream pengganti MediaRecorder biasa
+                    scriptProcessor = audioContext.createScriptProcessor(4096, 1, 1);
+                    scriptProcessor.onaudioprocess = function(e) {
+                        if (!isRecording) return;
+                        const inputData = e.inputBuffer.getChannelData(0);
+                        localRecordingBuffers.push(new Float32Array(inputData));
+                    };
+                    
+                    source.connect(scriptProcessor);
+                    scriptProcessor.connect(audioContext.destination);
+
+                    isRecording = true;
+                    btnRecord.innerHTML = `<span>⏹ Berhenti</span>`;
+                    btnRecord.classList.add('recording');
+                    statusText.textContent = "Mendengarkan rekaman... Bicaralah!";
+                    btnPlay.disabled = true;
+                    btnDownload.disabled = true;
+
+                    visualize();
+                })
+                .catch(function(err) {
+                    console.error(err);
+                    statusText.textContent = "Akses mikrofon ditolak / tidak didukung di WebView.";
+                });
             }
+        } catch (globalErr) {
+            statusText.textContent = "Gagal memproses inisialisasi media audio.";
         }
     });
 
@@ -353,8 +394,9 @@
     }
 
     // PUTAR BALIK
-    btnPlay.addEventListener('click', () => {
-        if (!reversedBuffer || !audioContext) return;
+    btnPlay.addEventListener('click', async () => {
+        if (!reversedBuffer) return;
+        await initAudioContext();
 
         if (audioSourceNode) { try { audioSourceNode.stop(); } catch(e) {} }
 
@@ -379,7 +421,7 @@
         };
     });
 
-    // DOWNLOAD DENGAN PRESET KECEPATAN
+    // DOWNLOAD
     btnDownload.addEventListener('click', async () => {
         if (!reversedBuffer) return;
 
