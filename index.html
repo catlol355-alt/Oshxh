@@ -1,0 +1,486 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Advanced Audio Reverse Studio</title>
+    <style>
+        :root {
+            --bg-gradient: linear-gradient(135deg, #0f172a 0%, #1e1b4b 100%);
+            --panel-bg: rgba(255, 255, 255, 0.05);
+            --panel-border: rgba(255, 255, 255, 0.1);
+            --primary: #6366f1;
+            --primary-hover: #4f46e5;
+            --danger: #ef4444;
+            --danger-hover: #dc2626;
+            --text: #f8fafc;
+            --text-muted: #94a3b8;
+        }
+
+        body {
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+            background: var(--bg-gradient);
+            color: var(--text);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            margin: 0;
+            padding: 20px;
+            box-sizing: border-box;
+        }
+
+        .card {
+            background: var(--panel-bg);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid var(--panel-border);
+            padding: 30px;
+            border-radius: 24px;
+            width: 100%;
+            max-width: 480px;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+            text-align: center;
+        }
+
+        h2 {
+            margin-top: 0;
+            font-size: 26px;
+            font-weight: 700;
+            letter-spacing: -0.5px;
+            background: linear-gradient(to right, #a5b4fc, #6366f1);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .status-badge {
+            display: inline-block;
+            padding: 6px 16px;
+            background: rgba(255, 255, 255, 0.08);
+            border-radius: 20px;
+            font-size: 13px;
+            color: var(--text-muted);
+            margin-bottom: 25px;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        /* Visualizer */
+        .visualizer-container {
+            width: 100%;
+            height: 100px;
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 16px;
+            margin-bottom: 25px;
+            overflow: hidden;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+        canvas {
+            width: 100%;
+            height: 100%;
+        }
+
+        /* Controls */
+        .main-controls {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+            margin-bottom: 20px;
+        }
+
+        button, .file-label {
+            font-family: inherit;
+            font-size: 14px;
+            font-weight: 600;
+            padding: 14px 16px;
+            border: none;
+            border-radius: 12px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+
+        #btnRecord { background-color: var(--danger); color: white; }
+        #btnRecord:hover { background-color: var(--danger-hover); }
+        #btnRecord.recording { 
+            animation: pulse 1.5s infinite; 
+            background-color: #334155;
+        }
+
+        .file-label {
+            background-color: rgba(255, 255, 255, 0.1);
+            color: var(--text);
+            border: 1px dashed rgba(255, 255, 255, 0.2);
+        }
+        .file-label:hover { background-color: rgba(255, 255, 255, 0.15); }
+        input[type="file"] { display: none; }
+
+        .play-zone { margin-bottom: 25px; }
+        #btnPlay { 
+            width: 100%; 
+            background-color: var(--primary); 
+            color: white; 
+            font-size: 15px;
+        }
+        #btnPlay:hover { background-color: var(--primary-hover); }
+        #btnPlay:disabled { background-color: #334155; color: var(--text-muted); cursor: not-allowed; opacity: 0.5; }
+
+        /* Extra Features Panel */
+        .features-panel {
+            background: rgba(0, 0, 0, 0.15);
+            padding: 20px;
+            border-radius: 16px;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            text-align: left;
+        }
+
+        .control-group { margin-bottom: 15px; }
+        .control-group:last-child { margin-bottom: 0; }
+
+        label {
+            display: block;
+            font-size: 12px;
+            color: var(--text-muted);
+            margin-bottom: 8px;
+            font-weight: 500;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .slider-container {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        input[type="range"] {
+            flex: 1;
+            accent-color: var(--primary);
+            cursor: pointer;
+        }
+
+        .speed-val {
+            font-size: 14px;
+            font-weight: 600;
+            min-width: 35px;
+        }
+
+        #btnDownload {
+            width: 100%;
+            background: rgba(255, 255, 255, 0.05);
+            color: var(--text);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        #btnDownload:hover { background: rgba(255, 255, 255, 0.15); }
+        #btnDownload:disabled { opacity: 0.2; cursor: not-allowed; }
+
+        @keyframes pulse {
+            0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); }
+            70% { box-shadow: 0 0 0 12px rgba(239, 68, 68, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+        }
+    </style>
+</head>
+<body>
+
+<div class="card">
+    <h2>Reverse Audio Studio</h2>
+    <div class="status-badge" id="status">Siap: Rekam atau Muat File Audio</div>
+
+    <div class="visualizer-container">
+        <canvas id="visualizer"></canvas>
+    </div>
+
+    <div class="main-controls">
+        <button id="btnRecord"><span>🔴 Rec Suara</span></button>
+        <label class="file-label" for="audioFile"><span>📂 Load Audio</span></label>
+        <input type="file" id="audioFile" accept="audio/*">
+    </div>
+
+    <div class="play-zone">
+        <button id="btnPlay" disabled>▶ Putar Hasil Balik (Reverse)</button>
+    </div>
+
+    <div class="features-panel">
+        <div class="control-group">
+            <label for="speedSlider">Kecepatan Putar & Simpan</label>
+            <div class="slider-container">
+                <input type="range" id="speedSlider" min="0.5" max="2.0" step="0.1" value="1.0">
+                <span class="speed-val" id="speedValue">1.0x</span>
+            </div>
+        </div>
+        
+        <div class="control-group">
+            <button id="btnDownload" disabled>⬇ Unduh Sesuai Kecepatan (.wav)</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    let mediaRecorder;
+    let audioChunks = [];
+    let audioContext;
+    let reversedBuffer = null;
+    let audioSourceNode = null;
+    let analyserNode = null;
+    let animationFrameId;
+
+    const btnRecord = document.getElementById('btnRecord');
+    const audioFileInput = document.getElementById('audioFile');
+    const btnPlay = document.getElementById('btnPlay');
+    const btnDownload = document.getElementById('btnDownload');
+    const statusText = document.getElementById('status');
+    const speedSlider = document.getElementById('speedSlider');
+    const speedValue = document.getElementById('speedValue');
+    const canvas = document.getElementById('visualizer');
+    const canvasCtx = canvas.getContext('2d');
+
+    function resizeCanvas() {
+        canvas.width = canvas.parentElement.clientWidth;
+        canvas.height = canvas.parentElement.clientHeight;
+    }
+    window.addEventListener('resize', resizeCanvas);
+    resizeCanvas();
+    drawBlankWave();
+
+    function initAudioContext() {
+        if (!audioContext) {
+            audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        }
+    }
+
+    speedSlider.addEventListener('input', (e) => {
+        const val = parseFloat(e.target.value).toFixed(1);
+        speedValue.textContent = `${val}x`;
+        if (audioSourceNode) {
+            audioSourceNode.playbackRate.value = val;
+        }
+    });
+
+    // LOAD FILE
+    audioFileInput.addEventListener('change', async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        initAudioContext();
+        statusText.textContent = `Membaca file: ${file.name}...`;
+        btnPlay.disabled = true;
+        btnDownload.disabled = true;
+
+        if (audioSourceNode) try { audioSourceNode.stop(); } catch(err){}
+
+        const reader = new FileReader();
+        reader.onload = async (event) => {
+            try {
+                const arrayBuffer = event.target.result;
+                const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+                reverseTheBuffer(audioBuffer);
+            } catch (error) {
+                statusText.textContent = "Gagal membaca format audio file ini.";
+            }
+        };
+        reader.readAsArrayBuffer(file);
+    });
+
+    // REKAM SUARA
+    btnRecord.addEventListener('click', async () => {
+        initAudioContext();
+        if (mediaRecorder && mediaRecorder.state === "recording") {
+            mediaRecorder.stop();
+            btnRecord.innerHTML = `<span>🔴 Rec Suara</span>`;
+            btnRecord.classList.remove('recording');
+            statusText.textContent = "Memproses pembalikan rekaman...";
+        } else {
+            audioChunks = [];
+            if (audioSourceNode) try { audioSourceNode.stop(); } catch(err){}
+            
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                analyserNode = audioContext.createAnalyser();
+                analyserNode.fftSize = 256;
+                
+                const source = audioContext.createMediaStreamSource(stream);
+                source.connect(analyserNode);
+
+                mediaRecorder = new MediaRecorder(stream);
+                mediaRecorder.ondataavailable = event => audioChunks.push(event.data);
+                mediaRecorder.onstop = async () => {
+                    stream.getTracks().forEach(track => track.stop());
+                    cancelAnimationFrame(animationFrameId);
+                    
+                    const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
+                    const arrayBuffer = await audioBlob.arrayBuffer();
+                    const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+                    reverseTheBuffer(audioBuffer);
+                };
+
+                mediaRecorder.start();
+                btnRecord.innerHTML = `<span>⏹ Berhenti</span>`;
+                btnRecord.classList.add('recording');
+                statusText.textContent = "Mendengarkan rekaman... Bicaralah!";
+                btnPlay.disabled = true;
+                btnDownload.disabled = true;
+
+                visualize();
+            } catch (err) {
+                statusText.textContent = "Akses mikrofon ditolak.";
+            }
+        }
+    });
+
+    // PROSES PEMBALIKAN BUFFER
+    function reverseTheBuffer(audioBuffer) {
+        reversedBuffer = audioContext.createBuffer(
+            audioBuffer.numberOfChannels,
+            audioBuffer.length,
+            audioBuffer.sampleRate
+        );
+
+        for (let ch = 0; ch < audioBuffer.numberOfChannels; ch++) {
+            const srcData = audioBuffer.getChannelData(ch);
+            const destData = reversedBuffer.getChannelData(ch);
+            for (let i = 0; i < audioBuffer.length; i++) {
+                destData[i] = srcData[audioBuffer.length - 1 - i];
+            }
+        }
+
+        statusText.textContent = "Audio siap diputar terbalik!";
+        btnPlay.disabled = false;
+        btnDownload.disabled = false;
+        drawBlankWave();
+    }
+
+    // PUTAR BALIK
+    btnPlay.addEventListener('click', () => {
+        if (!reversedBuffer || !audioContext) return;
+
+        if (audioSourceNode) { try { audioSourceNode.stop(); } catch(e) {} }
+
+        audioSourceNode = audioContext.createBufferSource();
+        audioSourceNode.buffer = reversedBuffer;
+        audioSourceNode.playbackRate.value = parseFloat(speedSlider.value);
+        
+        analyserNode = audioContext.createAnalyser();
+        analyserNode.fftSize = 256;
+        
+        audioSourceNode.connect(analyserNode);
+        analyserNode.connect(audioContext.destination);
+
+        audioSourceNode.start(0);
+        statusText.textContent = "Memutar audio terbalik...";
+        visualize();
+
+        audioSourceNode.onended = () => {
+            statusText.textContent = "Selesai memutar.";
+            cancelAnimationFrame(animationFrameId);
+            drawBlankWave();
+        };
+    });
+
+    // DOWNLOAD DENGAN PRESET KECEPATAN
+    btnDownload.addEventListener('click', async () => {
+        if (!reversedBuffer) return;
+
+        const playbackRate = parseFloat(speedSlider.value);
+        statusText.textContent = "Menyesuaikan kecepatan audio...";
+
+        const targetSampleRate = reversedBuffer.sampleRate;
+        const targetLength = Math.floor(reversedBuffer.length / playbackRate);
+        
+        const offlineCtx = new OfflineAudioContext(
+            reversedBuffer.numberOfChannels,
+            targetLength,
+            targetSampleRate
+        );
+
+        const bufferSource = offlineCtx.createBufferSource();
+        bufferSource.buffer = reversedBuffer;
+        bufferSource.playbackRate.value = playbackRate;
+
+        bufferSource.connect(offlineCtx.destination);
+        bufferSource.start(0);
+
+        const renderedBuffer = await offlineCtx.startRendering();
+
+        const wavBlob = bufferToWav(renderedBuffer);
+        const url = URL.createObjectURL(wavBlob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `reversed-audio-${playbackRate}x.wav`;
+        a.click();
+        URL.revokeObjectURL(url);
+        
+        statusText.textContent = `Berhasil mengunduh audio (${playbackRate}x)!`;
+    });
+
+    // UTILITIES
+    function visualize() {
+        const bufferLength = analyserNode.frequencyBinCount;
+        const dataArray = new Uint8Array(bufferLength);
+
+        const draw = () => {
+            animationFrameId = requestAnimationFrame(draw);
+            analyserNode.getByteFrequencyData(dataArray);
+
+            canvasCtx.fillStyle = 'rgba(15, 23, 42, 0.3)';
+            canvasCtx.fillRect(0, 0, canvas.width, canvas.height);
+
+            const barWidth = (canvas.width / bufferLength) * 2.5;
+            let barHeight;
+            let x = 0;
+
+            for (let i = 0; i < bufferLength; i++) {
+                barHeight = dataArray[i] / 2;
+                const hue = i * 2;
+                canvasCtx.fillStyle = `hsla(${230 + hue}, 80%, 65%, 0.8)`;
+                canvasCtx.fillRect(x, (canvas.height - barHeight) / 2, barWidth - 2, barHeight);
+                x += barWidth;
+            }
+        };
+        draw();
+    }
+
+    function drawBlankWave() {
+        canvasCtx.clearRect(0, 0, canvas.width, canvas.height);
+        canvasCtx.fillStyle = '#0f172a';
+        canvasCtx.fillRect(0, 0, canvas.width, canvas.height);
+        canvasCtx.strokeStyle = 'rgba(99, 102, 241, 0.2)';
+        canvasCtx.lineWidth = 2;
+        canvasCtx.beginPath();
+        canvasCtx.moveTo(0, canvas.height / 2);
+        canvasCtx.lineTo(canvas.width, canvas.height / 2);
+        canvasCtx.stroke();
+    }
+
+    function bufferToWav(buffer) {
+        let numOfChan = buffer.numberOfChannels,
+            length = buffer.length * numOfChan * 2 + 44,
+            bufferArr = new ArrayBuffer(length),
+            view = new DataView(bufferArr),
+            channels = [], i, sample, offset = 0, pos = 0;
+
+        function setUint16(data) { view.setUint16(pos, data, true); pos += 2; }
+        function setUint32(data) { view.setUint32(pos, data, true); pos += 4; }
+
+        setUint32(0x46464952); setUint32(length - 8); setUint32(0x45564157);
+        setUint32(0x20746d66); setUint32(16); setUint16(1); setUint16(numOfChan);
+        setUint32(buffer.sampleRate); setUint32(buffer.sampleRate * 2 * numOfChan);
+        setUint16(numOfChan * 2); setUint16(16); setUint32(0x61746164); setUint32(length - pos - 4);
+
+        for(i = 0; i < buffer.numberOfChannels; i++) channels.push(buffer.getChannelData(i));
+        while(pos < length) {
+            for(i = 0; i < numOfChan; i++) {
+                sample = Math.max(-1, Math.min(1, channels[i][offset]));
+                sample = sample < 0 ? sample * 0x8000 : sample * 0x7FFF;
+                view.setInt16(pos, sample, true); pos += 2;
+            }
+            offset++;
+        }
+        return new Blob([bufferArr], {type: 'audio/wav'});
+    }
+</script>
+
+</body>
+</html>
